@@ -1,6 +1,6 @@
 {
   "name": "create-ugion-app",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "A front-end project scaffolding for UGION",
   "type": "module",
   "bin": {
@@ -45,7 +45,6 @@
     "npm-run-all2": "^6.2.2",
     "prettier": "^3.3.3",
     "prompts": "^2.4.2",
-    "vitest": "^2.0.4",
     "zx": "^8.1.4"
   },
   "lint-staged": {

@@ -16,7 +16,7 @@ import renderTemplate from './utils/renderTemplate'
 import { postOrderDirectoryTraverse, preOrderDirectoryTraverse } from './utils/directoryTraverse'
 import generateReadme from './utils/generateReadme'
 import getCommand from './utils/getCommand'
-import renderEslint from './utils/renderEslint'
+import renderPackageJson from './utils/renderPackageJson'
 
 function isValidPackageName(projectName) {
   return /^(?:@[a-z0-9-*~][a-z0-9-*._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(projectName)
@@ -75,11 +75,6 @@ async function init() {
   // --jsx
   // --router / --vue-router
   // --pinia
-  // --with-tests / --tests (equals to `--vitest --cypress`)
-  // --vitest
-  // --cypress
-  // --nightwatch
-  // --playwright
   // --eslint
   // --eslint-with-prettier (only support prettier through eslint for simplicity)
   // --vue-devtools / --devtools
@@ -114,10 +109,6 @@ async function init() {
       (argv.router || argv['vue-router']) ??
       argv.pinia ??
       (argv.tests || argv['with-tests']) ??
-      argv.vitest ??
-      argv.cypress ??
-      argv.nightwatch ??
-      argv.playwright ??
       argv.eslint ??
       argv['eslint-with-prettier'] ??
       (argv.devtools || argv['vue-devtools'])
@@ -136,10 +127,6 @@ async function init() {
     needsJsx?: boolean
     needsRouter?: boolean
     needsPinia?: boolean
-    needsE2eTesting?: false | 'cypress' | 'nightwatch' | 'playwright'
-    needsEslint?: boolean
-    needsPrettier?: boolean
-    needsDevTools?: boolean
   } = {}
 
   try {
@@ -226,27 +213,6 @@ async function init() {
           initial: false,
           active: 'Yes',
           inactive: 'No'
-        },
-        {
-          name: 'needsEslint',
-          type: () => (isFeatureFlagsUsed ? null : 'toggle'),
-          message: 'Add ESLint for code quality?',
-          initial: false,
-          active: 'Yes',
-          inactive: 'No'
-        },
-        {
-          name: 'needsPrettier',
-          type: (prev, values) => {
-            if (isFeatureFlagsUsed || !values.needsEslint) {
-              return null
-            }
-            return 'toggle'
-          },
-          message: 'Add Prettier for code formatting?',
-          initial: false,
-          active: 'Yes',
-          inactive: 'No'
         }
       ],
       {
@@ -269,18 +235,8 @@ async function init() {
     needsJsx = argv.jsx,
     needsTypeScript = argv.ts || argv.typescript,
     needsRouter = argv.router || argv['vue-router'],
-    needsPinia = argv.pinia,
-    needsEslint = argv.eslint || argv['eslint-with-prettier'],
-    needsPrettier = argv['eslint-with-prettier'],
-    needsDevTools = argv.devtools || argv['vue-devtools']
+    needsPinia = argv.pinia
   } = result
-
-  const { needsE2eTesting } = result
-  const needsCypress = argv.cypress || argv.tests || needsE2eTesting === 'cypress'
-  const needsCypressCT = needsCypress
-  const needsNightwatch = argv.nightwatch || needsE2eTesting === 'nightwatch'
-  const needsNightwatchCT = needsNightwatch
-  const needsPlaywright = argv.playwright || needsE2eTesting === 'playwright'
 
   const root = path.join(cwd, targetDir)
 
@@ -318,21 +274,6 @@ async function init() {
   if (needsPinia) {
     render('config/pinia')
   }
-  if (needsCypress) {
-    render('config/cypress')
-  }
-  if (needsCypressCT) {
-    render('config/cypress-ct')
-  }
-  if (needsNightwatch) {
-    render('config/nightwatch')
-  }
-  if (needsNightwatchCT) {
-    render('config/nightwatch-ct')
-  }
-  if (needsPlaywright) {
-    render('config/playwright')
-  }
   if (needsTypeScript) {
     render('config/typescript')
 
@@ -353,37 +294,6 @@ async function init() {
         }
       ]
     }
-    if (needsCypress) {
-      render('tsconfig/cypress')
-      // Cypress uses `ts-node` internally, which doesn't support solution-style tsconfig.
-      // So we have to set a dummy `compilerOptions` in the root tsconfig to make it work.
-      // I use `NodeNext` here instead of `ES2015` because that's what the actual environment is.
-      // (Cypress uses the ts-node/esm loader when `type: module` is specified in package.json.)
-      // @ts-ignore
-      rootTsConfig.compilerOptions = {
-        module: 'NodeNext'
-      }
-    }
-    if (needsCypressCT) {
-      render('tsconfig/cypress-ct')
-      // Cypress Component Testing needs a standalone tsconfig.
-      rootTsConfig.references.push({
-        path: './tsconfig.cypress-ct.json'
-      })
-    }
-    if (needsPlaywright) {
-      render('tsconfig/playwright')
-    }
-    if (needsNightwatch) {
-      render('tsconfig/nightwatch')
-      // Nightwatch needs a standalone tsconfig, but in a different folder.
-      rootTsConfig.references.push({
-        path: './nightwatch/tsconfig.json'
-      })
-    }
-    if (needsNightwatchCT) {
-      render('tsconfig/nightwatch-ct')
-    }
     fs.writeFileSync(
       path.resolve(root, 'tsconfig.json'),
       JSON.stringify(rootTsConfig, null, 2) + '\n',
@@ -391,25 +301,12 @@ async function init() {
     )
   }
 
-  // Render ESLint config
-  if (needsEslint) {
-    renderEslint(root, {
-      needsTypeScript,
-      needsCypress,
-      needsCypressCT,
-      needsPrettier,
-      needsPlaywright
-    })
-    render('config/eslint')
-  }
+  renderPackageJson(root, needsTypeScript)
 
-  if (needsPrettier) {
-    render('config/prettier')
-  }
+  render('config/eslint')
 
-  if (needsDevTools) {
-    render('config/devtools')
-  }
+  render('config/prettier')
+
   // Render code template.
   // prettier-ignore
   const codeTemplate =
@@ -456,8 +353,6 @@ async function init() {
   // We try to share as many files between TypeScript and JavaScript as possible.
   // If that's not possible, we put `.ts` version alongside the `.js` one in the templates.
   // So after all the templates are rendered, we need to clean up the redundant files.
-  // (Currently it's only `cypress/plugin/index.ts`, but we might add more in the future.)
-  // (Or, we might completely get rid of the plugins folder as Cypress 10 supports `cypress.config.ts`)
 
   if (needsTypeScript) {
     // Convert the JavaScript template to the TypeScript
@@ -517,13 +412,7 @@ async function init() {
     generateReadme({
       projectName: result.projectName ?? result.packageName ?? defaultProjectName,
       packageManager,
-      needsTypeScript,
-      needsCypress,
-      needsNightwatch,
-      needsPlaywright,
-      needsNightwatchCT,
-      needsCypressCT,
-      needsEslint
+      needsTypeScript
     })
   )
 
@@ -535,9 +424,6 @@ async function init() {
     )
   }
   console.log(`  ${bold(green(getCommand(packageManager, 'install')))}`)
-  if (needsPrettier) {
-    console.log(`  ${bold(green(getCommand(packageManager, 'format')))}`)
-  }
   console.log(`  ${bold(green(getCommand(packageManager, 'dev')))}`)
   console.log()
 }
